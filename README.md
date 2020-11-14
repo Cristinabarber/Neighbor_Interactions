@@ -1,2 +1,21 @@
-# Neighbor_Interactions
-Spatial interactions between neighboring plants are foundational to population and community ecology. Neighbor interactions include both positive (facilitation) and negative (competition) effects. The strength of interaction between neighboring plants decays with distance and is often modeled using non-linear functions that take into account a target plant and all its neighbors, resulting in large matrices that represent pairwise interactions. The structural complexity of neighbor interactions and the large size of neighborhood data structures results in long run times and convergence problems. In this talk, we demonstrate how Stan’s segment function can speed computation on sparse matrices of pairwise neighbors in plant-plant interaction models. In addition, we present solutions to common problems of fitting neighborhood models with hierarchical effects, including a comparison of centered vs. non-centered parameterizations.  We conclude that the flexibility of the Stan programming language presents novel opportunities to fit classic spatial models in ecology. 
+## Spatial models for plant neighborhood dynamics in Stan
+<small> In this case study, we demonstrate how Stan’s segment function can speed computation on sparse matrices of pairwise neighbors in plant-plant interaction models. In addition, we present solutions to common problems of fitting neighborhood models with hierarchical effects, including a comparison of centered vs. non-centered parameterizations.</small>
+
+[View](case-studies/plantInteractions.html) <span class="note">(HTML)</span>
+
+Authors
+:Cristina Barber, Andrii Zaiats, Cara Applestein and T.Trevor Caughlin
+
+Keywords
+: plants, neighbor interactions, sparse matrix, segment function
+
+Source Repository
+: [Cristinabarber/Neighbor_Interactions](https://github.com/Cristinabarber/Neighbor_Interactions)
+<span class="note">(GitHub)</span>
+
+R Package Dependencies
+: <tt style="font-size: 90%">rstan</tt>
+
+License
+:  BSD (3 clause), CC-BY
+
