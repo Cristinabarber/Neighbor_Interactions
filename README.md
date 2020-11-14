@@ -17,5 +17,5 @@ R Package Dependencies
 : <tt style="font-size: 90%">rstan</tt>
 
 License
-:  BSD (3 clause), CC-BY
+:  BSD (3 clause)
 
