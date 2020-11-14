@@ -4,7 +4,7 @@
 [View](case-studies/plantInteractions.html) <span class="note">(HTML)</span>
 
 Authors
-:Cristina Barber, Andrii Zaiats, Cara Applestein and T.Trevor Caughlin
+: Cristina Barber, Andrii Zaiats, Cara Applestein and T.Trevor Caughlin
 
 Keywords
 : plants, neighbor interactions, sparse matrix, segment function
