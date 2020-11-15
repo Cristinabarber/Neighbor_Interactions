@@ -1,0 +1,723 @@
+---
+title: "Spatial models for plant neighborhood dynamics in Stan"
+author: "Cristina Barber, Andrii Zaiats, Cara Applestein and T.Trevor Caughlin"
+date: "August 20, 2020"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_depth: '2'
+  word_document:
+    toc: yes
+    toc_depth: '2'
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+    latex_engine: xelatex
+bibliography: references.bib
+csl: ecology.csl
+always_allow_html: yes
+---
+```{r eval=T, include=FALSE}
+  library(knitr)
+```
+ <br>
+ 
+# 1. Introduction
+
+Interactions between neighboring plants impact how plants grow, survive, and reproduce. Although interactions occur at the scale of individual plants, the consequences of plant-plant interactions shape population and community structure across terrestrial ecosystems. Plants tend to do worse in single-species neighborhoods than in many-species neighborhoods [@sortibran_nurses_2014], an individual plant level dynamic that helps explain how plant biodiversity is maintained across ecosystems, from montane deserts [@adler_coexistence_2010] to tropical rainforests [@comita_asymmetric_2010]. Managing plant neighborhoods, from thinning dense stands of trees [@cescatti_silvicultural_1998;@lechuga_managing_2017] to planting species that will facilitate their neighbors [@gomez-aparicio_role_2009], is a cornerstone of forestry, restoration, and agriculture. The importance of plant-plant interactions across basic and applied ecology points to the need for analyses to quantify how neighborhoods impact plant demography. Such analyses must account for space, as plants interact more with closer neighbors than with neighbors further away (Fig.1).
+
+![_Figure 1: Spatial structure of a plant neighborhood. The seedling in the center of the plot experiences a range of plant-plant interactions, depending on the neighbor's species identity,  plant size, and physical distance._](Neighbors_distances.png)
+
+
+
+<br>  The objective of this case study is to illustrate how to fit spatially-explicit models for plant-plant interactions in Stan. Using multiple examples of plant demographic rates, including growth, survival, and recruitment, we address the following objectives:
+
+<br>  
+
+**1. Develop models that account for non-linear relationships between interactions strength and pairwise distances between neighboring plants:**<br>  
+	 Explicitly estimating distance-decay parameters in neighborhood models enables greater flexibility and opportunities for novel inference. We use simulated data to demonstrate Stan’s ability to fit non-linear models for plant-plant interactions.
+
+<br>  
+	 
+**2. Efficient strategies for modeling pairwise interactions between many plants: **
+<br>  
+	Spatially-explicit models require accounting for pairwise interactions between neighbors, leading to large matrices. Every individual element added to a pairwise distance matrix increases matrix size following a series of square numbers. However, not all plants represented in the pairwise matrix interact, so this kind of data accumulates many zeroes, which creates a sparse matrix. We will demonstrate how to efficiently handle sparse matrices in plant neighborhood models, using Stan’s segment function to eliminate zero-valued elements from computation.
+
+<br>  
+
+ **3. For hierarchical neighborhood models, we explore the costs and benefits of the non-centered parameterization for model convergence:**
+<br>  
+Hierarchical structures, including random effects that represent spatial and temporal covariance, are common in ecological data. We show how plant-plant interaction models can incorporate random effects and then explore the consequences of centered and non-centered parameterization [@betancourt_hamiltonian_2013] for model-fitting.
+
+ <br>
+ 
+# 2. Environment
+
+This case study uses Stan version 2.19.1 and the following R packages.
+```{r eval=T, message=FALSE}
+
+  library(rstan)
+  library(ggplot2)
+  library(bayesplot)
+  library(rethinking)
+  library(gridExtra)
+  library(kableExtra)
+```
+
+ <br>
+ 
+# 3. Simulation: Effect of neighbor plants on growth 
+ 
+We start by simulating a spatially explicit data set of plant growth and then fitting a neighborhood model. We model the growth of stationary plants as a function of their intrinsic growth (growth in isolation) and their local neighborhood characteristics (i.e., neighbor size and proximity; Eq. 3).  
+
+$$\begin{split} growth\sim normal(\mu,\sigma ^2)\\ 
+\ \mu_j = \alpha + \beta \textrm{s}_0 + a_3 \sum\limits_{j=1}^n \frac {\textrm{size}_{j}^{a_1}} {\textrm{distance}_{j}^2 a_2} \quad            Eq. 3 
+\end{split}$$
+
+Where $\alpha$  is the intercept, $\beta$ is the growth rate of plants depending on their initial size, $\mathit{\textrm{s}_0}$  is the initial size of the target plant, size, and distance are the matrix containing the size and distance of neighbors,  and $\mathit{a_1}$, $\mathit{a_2}$ and $\mathit{a_3}$ are parameters describing the relationship of growth with the neighbors's size and distance. 
+
+## 3.1 Data simulation
+ 
+The generative model includes two predictor variables (Fig.2); the size of plants at time t and t+1, and a spatial component; the x and y coordinates for each individual:
+```{r}
+N=500
+size_t0=rnorm(N,mean=10, sd=1)
+size_t1=rnorm(N, mean=35,sd=1)
+
+x=runif(N,min=0,max=14)
+y=runif(N,min=0,max=14)
+distmat=as.matrix(dist(cbind(x,y),method="euclidean"))
+sizemat=matrix(rep(size_t0,500),nrow=500,ncol=500,byrow=T)
+```
+
+```{r echo=FALSE}
+# Visualize the data:
+par(pty="s")
+
+plot(x,y,bty="n", cex=size_t0*.2, xlab="x", ylab="y", col=rgb(0,0,1,0.5),pch=20, main="Mapped individauls")
+
+```
+<br>  _Figure 2: Map showing the simulated plant individuals and their initial size. The dots show where the plants are, and the size of the dot is proportional to the initial size of the plant._
+<br>  
+Our generative model  assumes that plant-plant interactions beyond a neighbor effect radius of 10 m are zero. We then simulated the effect of neighbors as a function of neighbor size (bigger neighbors have larger effects) and distance (closer neighbors have larger effects) using the following equation:  `growth=alpha+size_t0*beta+ a3*rowSums(exp(a1*log(sizemat4)-(distmat4^2*a2)))`. We assumed growth was normally distributed, with a mean equal to the linear combination of an intercept (representing baseline growth), a size-dependent term, and the neighborhood effect term (Eq. 3).
+```{r}
+#Here, the parameters are set to produce a biologically reasonable outcome:
+alpha=0.8 # Intercept.
+beta=0.2 # Size dependent growth (we hypothesize that bigger individuals grow faster).
+a3=.035 # Neighbor effect parameter
+a2=0.05 # Scaling parameter which determines the spatial reach of neighbor effect
+a1=0.1 # Size dependent effect of the neighbor.
+true_param=c(alpha,beta,a3,a2,a1,sd=0.01)
+growth=rnorm(N,
+               mean=alpha+
+                    size_t0*beta+
+                    a3*rowSums(exp(a1*log(sizemat)-(distmat^2*a2))),
+              sd=0.01)
+```
+
+The pairwise matrix representing plant-plant interactions can become large, so one solution is to assume that neighbors far from each other do not interact. This assumption establishes a neighbor effect radius, beyond which neighborhood effects are assumed to be negligible. The consequence of establishing a neighbor effect radius is that the effect of any individuals beyond the radius threshold is disregarded.
+<br>   
+When we set the neighbor effect radius, we create a considerable amount of zero-valued matrix elements representing neighbor pairs with minimal interaction. One way to decrease computation time is to slice off zeros from the neighbor matrices as they do not contribute to the crowding term. The built-in segment function in Stan provides a way to eliminate zero-valued matrix elements from computation by storing non-zero elements and their position on the pairwise matrix in three separate vectors. The  segment function requires creating a long vector of non-zero observations and two vectors indicating the position of non-zero elements within the matrix (Fig. 3). 
+<br>  
+
+![_Figure 3: Segment function requires the creation of a vector with no zeroes, an index of the non- zero values on each matrix row and an index of the position in the vector of the first values of the matrix rows. This diagram explains the composition of the non-zero values vector and the two vector index needed to use the segment function._](Segment_Fig2.jpg)
+
+
+<br>We compared Stan models fit with the segment function to the same models fit using the full matrix. To evaluate how choosing a neighborhood effect radius could introduce bias in parameter estimation, we compared the fit of six different models with neighbor effect radii of 5m, 10m, 15m, 20m. We note that the “true” effect radius, which is known in this case because the data were simulated, is 10 m. With real data, the decision of this radius should be based on biological knowledge, for example, the distance that roots extend from the base of a plant [@zaiats_intraspecific_2020] or by testing at which neighbor effect radius the model has the best fit [@pacala_neighborhood_1985;@pacala_neighborhood_1987]. For each neighbor effect radius, we set the effect of distant neighbors beyond the radius to zero.
+  
+```{r}
+distmat=ifelse(distmat>10,0,distmat) #here, the cut-off is at 10m radius. 
+```
+
+Because the neighbors further than the neighbor effect radius do not affect the response variable, we also set the size of plants in the pairwise matrix beyond the neighbor effect radius to zero.  
+```{r}
+sizemat=ifelse(distmat==0,0,sizemat)
+```
+Then we create the different input databases for each of the neighbor effect radii.
+```{r}
+# Combine the predictors in the list to create the model data base:
+case_stanlist=list(N=N,growth=growth,size_t0=size_t0, distmat=distmat,sizemat=sizemat)
+```
+<br>  
+
+## 3.2 Stan code
+
+In our Stan code, neighbor interaction parameters are estimated in the `transformed parameters` block. The priors for the parameters `alpha`, `beta`, `a1`, `a2` and, `a3` are  weakly informed priors following a `normal(0,5)` distribution. We use an `exponential(1)` distribution for `sigma` to prevent the model from exploring negative values for the standard deviation. The priors used in this example are relatively vague and could be tightened if prior information is available. The following code uses the pairwise matrix:
+
+```{r eval=F, include=T}
+data{  
+  int N;                        // number of individuals  
+  vector [N] size_t0;           // size of focal plants  
+  vector [N] growth;            // growth of focal plants, response  
+  vector [N] sizemat[N];        // full size matrix  
+  vector [N] distmat[N];        // full distance matrix  
+}
+parameters{
+  real alpha;                       // Intercept  
+  real beta;                        // Effect of target plant size on response  
+  real sigma;                       // global SD  
+  real<lower=0> a1;                 // size dependent effect of the neighbor    
+  real a3;                          // net crowding effect  
+  real<lower=0> a2;                 // spatial scale  
+  }
+transformed parameters{  
+  vector[N] kernel;  
+  vector[N] mu;
+  vector[N] smat[N];
+  vector[N] dmat[N];
+  for(i in 1:N){
+    for(j in 1:N){
+     smat[i,j]=sizemat[i,j]^a1;  
+     dmat[i,j]=distmat[i,j]^2*a2;
+    }}
+  for(n in 1:N)
+      kernel[n]=sum(smat[n]./exp(dmat[n]));    //we use ./ to perform a vectorial division
+  for(n in 1:N)
+      mu[n]=alpha+size_t0[n]*beta+a3*kernel[n];
+}
+model{
+  alpha~normal(0,5);   // uninformed priors centered at zero;
+  beta~normal(0,5);
+  a1~normal(0,5);
+  a2~normal(0,5);
+  a3~normal(0,5);
+  sigma~exponential(1);
+  
+  growth ~ normal(mu,sigma);
+}
+```
+
+To use the segment function, we have to create the three vectors described in Figure 3,including one vector that contains all the non-zero elements of the pairwise matrix and two index vectors that indicate the position of the non-zero values in the pairwise matrix. 
+
+```{r eval=F}
+# code to create the vector with no zeroes and the index vectors
+n_nb=rep(NA,case_stanlist$N)#empty vector with length N (number of rows in the matrix)
+#populate the vector, number of non zero observations in each row, i.e., group size index
+for(i in 1:length(n_nb)) {
+n_nb[i]=sum(case_stanlist$sizemat[i,]!=0)
+}
+case_stanlist$n_nb=n_nb #add to the list
+
+
+
+a=as.vector(t(case_stanlist$sizemat)) #convert size matrix to a vector
+b=as.vector(t(case_stanlist$distmat)) #convert distance matrix to a vector
+size_observations=a[a!=0] #subset non-zero observations
+dist_observations=b[a!=0] #subset non-zero observations
+case_stanlist$size_vector=size_observations # add them to the list
+case_stanlist$dist_vector=dist_observations
+
+case_stanlist$obs=length(case_stanlist$size_vector) #total number of non-zero observations
+pos=rep(NA,case_stanlist$N) # position index for each group
+pos[1]=1
+for(i in 2:(case_stanlist$N)){
+ 		pos[i]=pos[i-1]+case_stanlist$n_nb[i-1]
+}
+case_stanlist$pos=pos
+
+
+
+```
+Then to include the segment function in the Stan code we will substitute the size and distance pairwise matrices using the segment functions `segment(size_vec, pos[n], n_nb[n])` and `segment(dist_vec, pos[n], n_nb[n])` respectively. The code substituted by "..." is the same as in the previous code for the full matrix approach.
+
+```{r eval = F, include=T}
+data{
+  int obs;                      // number of observation in the long vector
+  int N;                        // number of individuals
+  vector [N] size_t0;           // size of focal plants
+  vector [N] growth;            // growth of focal plants, response
+  int n_nb[N];
+  vector [obs] size_observations;        // leng vector of neighbor sizes
+  vector [obs] dist_observations;        // long vector of pairwise distances
+  int pos[N];
+}
+transformed data{
+  
+    }
+}
+parameters{
+...
+  }
+transformed parameters{
+  vector[N] kernel;  
+  vector[N] mu;
+  vector[obs] size_vec;
+  vector[obs] dist_vec;
+  for (i in 1:obs){
+      dist_vec[i]=dist_observations[i]^2; 
+      size_vec[i]=size_observations[i]^a1;
+    }
+  for(n in 1:N)
+      kernel[n]=sum(exp(log(segment(size_vec, pos[n], n_nb[n]))-
+                          (segment(dist_vec, pos[n], n_nb[n])*a2)));
+  
+  for(n in 1:N)
+      mu[n]=alpha+size_t0[n]*beta+a3*kernel[n];
+}
+model{
+...
+}
+```
+  
+## 3.3 Output
+We ran the code using the pairwise matrix and the segment function for the six neighbor effect radii and compared model fitting efficiency between them. We estimated the model fitting efficiency by dividing the elapsed time by the effective sample size (ESS) of 1000 iterations. Lower values represent more efficient sampling:
+
+```{r eval = F, include=T}
+sum(get_elapsed_time(model)[,"sample"])/sum(summary(model)$summary[,'n_eff'] * 1000)
+```
+The results show that the segment function was more efficient than the pairwise matrix for almost all neighbor effect radii. However, for the generative radius at 10m, both strategies were equally efficient. Using the segment function to fit neighbor interaction models is advantageous because the greater efficiency from the segment function compared with the matrix under different radii allows a faster exploration of models parametrized with different radii (Fig. 4). 
+```{r echo=FALSE, message=FALSE}
+load("simMatrix1.Rdata")
+load("simMatrix2.Rdata")
+load("simMatrix3.Rdata")
+load("simMatrix4.Rdata")
+
+
+load("simSeg1.Rdata")
+load("simSeg2.Rdata")
+load("simSeg3.Rdata")
+load("simSeg4.Rdata")
+
+
+m1<-sum(get_elapsed_time(simMatrix1)[,"sample"]) / sum(summary(simMatrix1)$summary[,'n_eff'] * 1000)
+m2<-sum(get_elapsed_time(simMatrix2)[,"sample"]) / sum(summary(simMatrix2)$summary[,'n_eff'] * 1000)
+m3<-sum(get_elapsed_time(simMatrix3)[,"sample"]) / sum(summary(simMatrix3)$summary[,'n_eff'] * 1000)
+m4<-sum(get_elapsed_time(simMatrix4)[,"sample"]) / sum(summary(simMatrix4)$summary[,'n_eff'] * 1000)
+
+
+
+s1<-sum(get_elapsed_time(simSeg1)[,"sample"]) / sum(summary(simSeg1)$summary[,'n_eff'] * 1000)
+s2<-sum(get_elapsed_time(simSeg2)[,"sample"]) / sum(summary(simSeg2)$summary[,'n_eff'] * 1000)
+s3<-sum(get_elapsed_time(simSeg3)[,"sample"]) / sum(summary(simSeg3)$summary[,'n_eff'] * 1000)
+s4<-sum(get_elapsed_time(simSeg4)[,"sample"]) / sum(summary(simSeg4)$summary[,'n_eff'] * 1000)
+
+matrix<-c(round(m1,digits = 2),round(m2,digits = 2),round(m3,digits = 2),round(m4,digits = 2))
+segment<-c(round(s1,digits = 2),round(s2,digits = 2),round(s3,digits = 2),round(s4,digits = 2))
+```
+```{r echo=FALSE, message=FALSE}
+{plot(NA,ylim=c(0,17),xlim=c(1,4),xaxt = "n" ,ylab="Time/ESS",xlab="Neighbor effect radius",frame.plot=FALSE)
+axis(1, at=1:4, labels=c("5m","10m","15m","20m"))
+lines(matrix, col="#56B4E9", lty=2,lwd=2)
+lines(segment,col="#009E73",lwd=2)
+legend(3, 12, legend=c("Matrix", "Segment function"),
+       col=c("#56B4E9", "#009E73"), lty=c(2,1), cex=1,
+       box.lty=0,lw=2)}
+
+```
+
+
+<br>  _Figure 4: Segment function is more efficient than the matrix approach for all neighbor effects, except 10 m. We note that 10 m was the “true” neighbor effect radius used to simulate data. The blue dashed line shows the change in efficiency using the matrix under different neighbor effect radii. The green line shows the change in efficiency using segment function under different neighbor effect radii. Smaller values of Time/ESS represent inreased efficiency and higher values represent decreased efficiency._ 
+<br>  
+We can also check whether estimated parameter intervals capture the true values as the true values for parameters are known in this simulated example. Our results highlight the importance of choosing a neighbor effect radius to obtain accurate estimates that describes the plant-plant interactions (Fig. 5). The matrix and the segment function could recover the true parameters with a neighbor effect radius of 10 m. For the segment method, similar efficiency and parameter recovery was achieved with a neighbor effect radius of 15 m. Models fitted with other neighbor effect radii did not converge and were not able to recover the true parameters for both the matrix and the segment function. These results agree with @canham_analysis_2006. They determined that a slightly bigger radius than the mean radius can provide estimates with negligible biases. In comparison, a radius smaller than the mean radius provided more significant biases because it missed contributing individuals. Altogether, we would recommend erring on the side of overestimating the neighbor radius effect rather than having a too-small radius. Given this recommendation, we also suggest using the segment function as it is more efficient than the matrix for all radii tested (Fig.4). 
+
+```{r echo=FALSE, message=FALSE, warning = FALSE}
+multiplot <- function(x) { 
+  x %>% purrr::map(function(.) { 
+    broom.mixed::tidy(.,conf.method="HPDinterval",  conf.int = T,pars=c("a2"),conf.level=0.9) }) %>% 
+    dplyr::bind_rows(.id = "model") %>% 
+    ggplot(aes(term, estimate, ymin = conf.low,shape=model, ymax = conf.high,color=model))+scale_shape_manual(values=c(18,18,17,17,16,16,15,15),name  ="Neighbor effect radius",breaks = c("8","5","3","1"), labels=c("5m","10m","15m","20m")) + scale_colour_manual(values=c("#009E73","#56B4E9","#009E73","#56B4E9","#009E73","#56B4E9","#009E73","#56B4E9"),name  ="Method",breaks=c("2", "1"), labels=c("Segment function", "Matrix"))+ geom_pointrange(position = position_dodge(width = 1))+geom_hline(aes(yintercept = 0.05),size = 0.5, colour = "red") + coord_flip()+theme_classic()+xlab("") + ylab("Parameter estimate")
+}
+multiplot(list(simMatrix4,simSeg4,simMatrix3,simSeg3,simMatrix2,simSeg2,simMatrix1,simSeg1))
+
+```
+<br>  _Figure 5: The neighbor effect radius selection is essential to obtain unbiased estimates. The bias is similar for all the parameters and neighbors effect radii, so in this graph, we just show one of the parameters. The chosen parameter estimates are for a2, which estimates the rate of decrease of the effect of neighbors on growth with distance. The green shapes are the segment function  parameters estimates. The blue shapes are the matrix parameter estimates. Each of the shapes corresponds to a different neighbor effect radius. The red line is the true parameter used in the simulation. 90% Credibility intervals (CI) showed in the figure. Note the CI for the 10, and 15 m radii are not visible._ 
+<br>  
+Lastly, we checked common diagnostic metrics to evaluate convergence at the generative radius of 10 m. There are no divergent transitions, and the ESS, and  _$\hat{R}$_ values do not reveal any sampling problems.
+
+<br>  
+```{r echo=FALSE}
+print("Segment function at radius 10m:") 
+check_divergences(simSeg2)
+a<-round(summary(simSeg2)[]$summary[1:6,],3)
+kable(a)%>%
+  kable_styling( full_width = T)%>%
+  column_spec(1, bold = T, border_right = T)
+```
+
+  <br>
+  
+  
+# 4. Data example 1: Predicting recruitment of an invasive species based on parent tree location  
+## 4.1 Overview of the model
+
+Our next example applies inverse modeling to estimate spatial patterns of invasive strangler fig tree recruitment. The focal tree species,  _Ficus microcarpa_, is native to South Asia and is invading Florida. We constructed inverse models using spatial data on the abundance of seedling strangler figs in 30 x 30 m plots embedded in 300 m radius plots where the location and size of reproductive adult fig trees were recorded. The study design, described in Caughlin et al.[-@caughlin_urbanized_2012], resulted in fifty-two plots placed along a 250-km transect in Southwest Florida. The neighborhood model quantifies how seedling abundance declines with distance from adult trees (Eq.5).    
+$$\begin{split} recruitment \sim negative \, binomial(\mu,\phi)\\
+\mu=a+b\sum \limits_{j=1}^n \frac{1}{c+\textrm{distance}_j}\textrm{CP} \quad  Eq.5
+\end{split}$$
+
+
+The response variable in this example is recruitment, the number of seedlings within the monitored plots. Because our response variable is count data, we used the negative binomial distribution, parameterized in terms of a mean (_$\mu$_) and an overdispersion parameter(_$\phi$_). _a_ is the intercept, _b_ is the parameter describing the relationship between recruitment and the hyperbolic effect of distance, _c_ is the rate of decay of the effect of distance on recruitment, and CP is the number of suitable recruitment sites (counts of host trees) in the 30 x 30 m plots. 
+<br>  
+The data on adult tree abundance are organized in a distance pairwise matrix with the number of rows equal to the total number of sites and the number of columns equal to the maximum number of adult trees observed at a site. Then the distance pairwise matrix is filled with the distances between seedling plots and parent trees. Once the matrix is filled, the distances beyond the neighbor effect radius are transformed to zero.
+<br>  
+```{r, include=F}
+load("dat.Rdata")
+dis<-ifelse(is.na(dat$dis),0,dat$dis)
+dis[1:8,1:8]
+```
+
+
+## 4.2 Stan Code
+
+We used a very weakly informed prior `normal(0,100)` in `a` , `b` and `j` and an `exponential(0.5)` distribution for `phy` to prevent the model from exploring negative values for the shape parameters of the negative binomial. The original study did not include a log-link, but it exponenciated `a` , `b` and `j` to keep the parameters positive. To replicate the previous results, we ensured non-negative values for the mean of the negative binomial distribution by constraining parameters `a` , `b` and `j` to positive values using `real<lower=0>`, however we note that the log-link is the canonical link-function for the negative binomial distribution and probably a better way to ensure positive values for future studies. The Stan code for a model using the pairwise matrix is the following: 
+
+```{r eval=F, include=T}
+data {
+  int N;                        //number of available places for recruitment
+  int K;                        //number of parent trees 
+  vector [K] dist[N];           //array containing N vectors with K distances 
+                                //of available places to parent trees
+  int x[N];                     //count of seedlings
+  int CP[N];                    //count of cabbage palms
+  vector [N] one;               //vector of ones for the division
+}
+parameters {
+  real<lower=0>  a;
+  real<lower=0>  b;
+  real<lower=0>  c;
+  real<lower=0>  phy;
+}
+transformed parameters{
+  real mu[N];
+  real aa[N];
+  
+  for(i in 1:N) {
+    aa[i] = sum(ones[i] ./(c+dist[i]));
+    }
+   for (n in 1:N){
+      mu[n]=(a+b*aa[n])*CP[n];
+   }
+}
+model{
+  a~normal(0,100);
+  b~normal(0,100);
+  c~normal(0,100);
+  phy~exponential(0.5);
+  
+
+  x~neg_binomial_2(mu,phy);
+  }
+    
+  }
+```
+
+To use the segment function in this example, we consider that there are seedling plots that do not have any adult strangler fig trees nearby, indicating an empty neighborhood. An empty neighborhood will result in a zero in the `n_nb` vector, as in the second row of the predictor matrix in Figure 3. To account for these zeroes, include an ifelse statement that prevents zero-valued elements of n_nb in the plant interactions kernel in the `transformed parameters` block:
+
+```{r eval=F, include=T}
+data {
+  int N;                        //number of available places for recruitment
+  int K;                        //number of non-zero parent trees 
+  vector [K] distrag;           //vector containing all the non-zero distances
+  int x[N];                     //count of seedlings
+  int CP[N];                    //count of cabbage palms
+  int n_nb[N];                  //vector giving the amount of non zero values
+  int pos [N];                  //vector giving the position of non zero values
+  vector [N] one;               //vector of ones for the division
+}
+parameters {
+...
+  }
+transformed parameters{
+  real mu[N];
+  real aa[N];
+  
+  for(i in 1:N) {
+    aa[i] = sum(one[i] ./(c +segment(distrag,pos[i],n_nb[i])));
+  }
+  
+  for (n in 1:N){
+    if (n_nb[n]==0){mu[n]=a;}
+    else{
+      mu[n]=(a+b*aa[n])*CP[n];
+    }
+  }
+}
+model{
+ ...
+  }
+}
+```
+
+
+## 4.3 Output
+
+The results of the model using matrix and segment strategies lead to similar parameters estimates (Fig. 6) and produce parameter estimates comparable to the frequentist approach used in the published paper (Fig. 7). 
+<br>  
+
+```{r echo=F}
+load("Fig_distmodelmatrix.rds")
+load("Fig_distmodel.rds")
+
+fm_pars=extract(Fig_distmodelmatrix)
+fm_sg=extract(Fig_distmodel)
+
+
+```
+
+
+```{r echo=F, warning = FALSE}
+
+color_scheme_set("brightblue")
+p17<-mcmc_areas(as.matrix(Fig_distmodel),pars = c("a"),prob = 0.95)+
+  ggplot2::labs(
+    title = "Segment function"
+  )
+p18<-mcmc_areas(as.matrix(Fig_distmodel),pars = c("b"),prob = 0.95)
+p19<-mcmc_areas(as.matrix(Fig_distmodel),pars = c("j"),prob = 0.95)
+p20<-mcmc_areas(as.matrix(Fig_distmodel),pars = c("phy"),prob = 0.95)
+
+color_scheme_set("orange")
+p21<-mcmc_areas(as.matrix(Fig_distmodel),pars = c("a"),prob = 0.95)+
+  ggplot2::labs(
+    title = "Matrix"
+  )
+p22<-mcmc_areas(as.matrix(Fig_distmodel),pars = c("b"),prob = 0.95)
+p23<-mcmc_areas(as.matrix(Fig_distmodel),pars = c("j"),prob = 0.95)
+p24<-mcmc_areas(as.matrix(Fig_distmodel),pars = c("phy"),prob = 0.95)
+grid.arrange(p17,p18,p19,p20,p21,p22,p23,p24,nrow=2,ncol=4)
+```
+
+
+_Figure 6: Parameters posterior density of the model describing seed dispersal of invasive strangler fig trees_
+
+
+```{r echo=F}
+
+mu.link=function(x){fm_sg$a+fm_sg$b*(1/(fm_sg$j+x))}
+x.seq=seq(0,300,by=0.1)
+mu=sapply(x.seq,mu.link)
+mu.mean <- apply( mu , 2 , mean )
+mu.HPDI <- apply( mu , 2 , HPDI , prob=0.95 )
+plot(NA,bty="n",type="n",xlim=c(0,300), ylim=c(0,0.35),ylab="Recruitment", xlab="Distance from parent tree", cex.lab=1.5)
+legend("topright", legend=c( "Matrix", "Segment function","Original study"),
+       col=c( "coral", "dodgerblue2","black"), lty=c(2,1,3),lwd=2, cex=1, text.font=4, box.lty=0)
+lines(x.seq,mu.mean,lwd=2,col="dodgerblue2")
+shade(mu.HPDI,x.seq,col=col.alpha("dodgerblue2",.2))
+
+mu.link2=function(x){fm_pars$a+fm_pars$b*(1/(fm_pars$j+x))}
+mu2=sapply(x.seq,mu.link2)
+mu.mean2 <- apply( mu2 , 2 , mean )
+mu.HPDI2 <- apply( mu2 , 2 , HPDI , prob=0.95 )
+lines(x.seq,mu.mean2,lwd=2,lty=2,col="coral")
+shade(mu.HPDI2,x.seq,col=col.alpha("coral",.2))
+
+curve(exp(-3.97694)+exp(2.245328)*(1/(exp(3.95)+x)),lwd=2,lty=3,col="black",add =T, from = 0, to=300 )
+
+
+```
+
+  
+_Figure 7: Matrix and segment obtained similar estimates of the relationship between recruitment and the distance from parent tree. Curves show the relationship between recruitment and distance from parent tree parametrized using the sparse matrix, the segment function, and the frequentist maximum likelihood model fit using the mle4 package [@bates_fitting_2015] from in the original study_
+
+While both the full matrix and the segment models showed evidence of convergence, model efficiency was greater for the model fit with the segment function. Again, we estimated the model fitting efficiency by dividing the elapsed time by the effective sample size (ESS) of 1000 iterations. `Fig_distmodelmatrix` is the model fitted using the matrix, and `Fig_distmodel` is the model fitted using the segment function.
+
+```{r include=T}
+#Efficiency of the model fitted using the matrix:
+sum(get_elapsed_time(Fig_distmodelmatrix)[,"sample"])/
+  sum(summary(Fig_distmodelmatrix)$summary[,'n_eff'] * 1000)
+
+#Efficiency of the model fitted using the segment function:
+sum(get_elapsed_time(Fig_distmodel)[,"sample"])/
+  sum(summary(Fig_distmodel)$summary[,'n_eff'] * 1000)
+
+
+```
+
+ <br>
+
+# 5. Example 2: Seed germination probability
+ 
+## 5.1 Overview of the model
+ 
+Our second data example uses a Bayesian hierarchical framework to estimate how conspecific trees affect the seed to seedling transition in a tropical tree species from central Thailand. Plant neighborhoods considered in this model include seedling and adult tree neighbors, all of the same species as marked seeds placed on the forest floor in 1 $m^2$ plots. The marked seeds comprised a seed addition experiment spanning a 5 km gradient of tree abundance. In this study, the neighbor effect radius was set at 10 m. The primary objective of the study was to quantify how the density of neighbors impacted the probability of seed germination. More information on the study can be found in Caughlin et al.[-@caughlin_loss_2015]. We modeled the germination probability of seeds as proportional data using the binomial distribution (Eq. 6). 
+
+$$\begin{split}
+germination \sim binomial(\textrm{S,N}) \\
+logit(\textrm{S})= \mu+b \textrm{Con.seedlings}+a \sum\limits_{j=1}^n \frac{\textrm{size}_j}{\textrm{distance}_j^{ger}}+e \quad Eq.6 \\
+e_j \sim normal(0, \sigma) \\
+\sigma \sim normal(0,1)
+\end{split}$$
+
+
+The response variable in this example is the proportion of total added seeds within monitored plots. Input to the binomial distribution includes the total number of seeds added to each plot (N) and the number of successful germination events (S). Size and distance are the matrices containing the size and distance of neighbors. $\mu$ is the baseline germination, _b_ is the decrease in seed survival as a function of neighbor density, Con. Seedlings are the amount of conspecific seedling to represent the crowding effect, _a_ is the parameter that represents the effect of neighbor size and distance on recruitment, _ger_ is the distance decay of the effect of neighbor size and distance, and _e_ is a random plot effect, to account for non-independence between seeds in the same plot.
+<br>  
+The hierarchical structure of random effects, including the random plot effect in the seed germination model, can lead to model-fitting challenges. One common challenge in fitting these models is the high correlation between random effect parameters (“Neil’s funnel effect”), which causes the sampler to become "stuck" in the highly correlated area. When this happens, a non- centered parametrization can solve the pathology. However, if the non-centered parameterization is used, but Neil’s funnel does not occur, the non-centered parameterization can lead to an inefficient exploration of the probability surface. The relative performance of the centered vs. non-centered parameterizations depends on variance in the data as well as the sample size  [@betancourt_hamiltonian_2013]. In this case study, we compare a centered and a non-centered parameterization for the germination data, using a neighborhood model fit with the segment function in Stan. 
+<br> 
+
+## 5.2 Stan Code
+
+For a centered parameterization using the segment function, we would add the random effect directly into the model `g[n] =  (..) + e[plots[n]]`. We used a weakly informed prior `normal(0,1)` in `a` , `b`, `mu` and `ger`, for `e` we used a `normal(0, sigma_plot)` to center the random effects mean around zero. 
+
+  
+```{r eval=F, include=T}
+data {
+  int N;                        //number of plots
+  int K;                        //number of non-zero parent trees
+  int M;                        //number of random levels
+  vector [K] sizeN;             //matrix of neightbor size
+  vector [K] distN;             //matrix of neightbor distances
+  int x[N];                     //number of seedlings
+  int seeds[N];                 //number of seeds
+  int am[N];                    //vector giving the number of non zero values
+  int pos [N];                  //vector giving the position of non zero values
+  int Cseedlings [N];           //number of conspecific seedlings
+  int plots[N];                 //random effect of plots
+  }
+  
+parameters {
+  real  a;
+  real  b;
+  real<lower=0> ger;
+  real  mu;
+  real e [M];
+  real sigma_plot;
+  
+}
+transformed parameters{
+  real<lower=0, upper=1> s[N];
+  real  g[N];
+
+  for (n in 1:N){
+    if (am[n]==0){g[n]=mu+ b*Cseedlings[n]+e[plots[n]];}
+    else{
+      g[n] =  mu + b*Cseedlings[n] + a* sum(segment(sizeN,pos[n],am[n]) ./
+              exp(ger*log(segment(distN,pos[n],am[n])))) + e[plots[n]];
+      }
+  }
+ 
+}
+model{
+  a~normal(0,1);
+  b~normal(0,1);
+  ger~normal(0,1);
+  mu~nomal(0,1);
+  e~normal(0,sigma_plot);
+  sigma_plot~normal(0,1);
+
+  x~binomial_logit(seeds,g);
+  }
+    
+}
+```
+  
+If we would like to use a non-centered parameterization, we will add a few parameters for the random effect `e` in the `transformed parameters` block. The non-centered parametrization avoids the correlation between parameters using a linear model. The new parameters that we created are an intercept `mu_plot`, the random effect `el[n]`, and a scaling parameter `gamma_el`. `mu_plot` is equivalent to the mean of the random effects, so we chose a prior `normal(0,1)` to maintain it around zero. `el[n]` is the random effect deviations from zero that follow a unit normal prior `normal(0,1)`. The trick here is that the unit normal prior causes `el[n]` to be an orthogonal vector. As a consequence, the random effects parameters become uncorrelated and avoid Neil's funnel effect. Because `el[n]` provides deviations at a scale of one, we have to multiply it by the scaling parameter `gamma_el` to bring the parameters to the model scale.
+
+```{r eval=F, include=T}
+data{
+  ...
+}
+parameters {
+  real  a;
+  real  b;
+  real<lower=0> ger;
+  real  mu;
+  real mu_plot;
+  real el[M];
+  real gamma_el;
+
+  
+}
+transformed parameters{
+  real<lower=0, upper=1> s[N];
+  real  g[N];
+  real e [M];
+  
+  for (n in 1:M){
+    e[n]= el[n]*gamma_el+mu_plot;
+  }
+  for (n in 1:N){
+    if (am[n]==0){g[n]=mu+ b*Cseedlings[n]+e[plots[n]];}
+    else{
+      g[n] =  mu + b*Cseedlings[n] + a* sum(segment(sizeN,pos[n],am[n]) ./
+              exp(ger*log(segment(distN,pos[n],am[n])))) + e[plots[n]];
+      }
+  }
+}
+model{
+  a~normal(0,1);
+  b~normal(0,1);
+  ger~normal(0,1);
+  mu~nomal(0,1);
+  el~normal(0,1);
+  mu_plot~normal(0,1);
+  gamma_el~normal(0,1);
+  
+  for (n in 1:N){
+    x~binomial_logit(seeds,g);
+  }
+}
+```
+## 5.3 Output
+The results show that when using a centered parameterization, we obtain similar comparable parameter estimates to the study. Non-centered parameterization resulted in estimates further from the ones obtained in the study and with wider confidence intervals. This example illustrates how a non-centered parameterization can sometimes result in higher uncertainty than the centered parameterization. 
+```{r echo=F}
+IBM<-read.csv("IBMpars12.16.csv")
+load("Thai_segmodelcV.rds")
+load("Thai_segmodelnc_CV.rds")
+load("SG.Rdata")
+Thai_segc=extract(Thai_segmodelcV)
+Thai_segnc=extract(Thai_segmodelncV)
+
+```
+
+
+
+
+```{r echo=F}
+
+mu.link=function(x){exp(Thai_segnc$mu + Thai_segnc$b*1 + Thai_segnc$a* (90/(x^(Thai_segnc$ger))))/(1+exp(Thai_segnc$mu + Thai_segnc$b*1 + Thai_segnc$a* (90/(x^(Thai_segnc$ger)))))}
+x.seq=seq(0,25,by=0.1)
+mu=sapply(x.seq,mu.link)
+mu.mean <- apply( mu , 2 , mean )
+mu.HPDI <- apply( mu , 2 , HPDI , prob=0.95 )
+
+
+
+
+mu.link2=function(x){exp(Thai_segc$mu + Thai_segc$b*1 + Thai_segc$a* (90/(x^(Thai_segc$ger))))/(1+exp(Thai_segc$mu + Thai_segc$b*1 + Thai_segc$a* (90/(x^(Thai_segc$ger)))))}
+x.seq2=seq(0,25,by=0.1)
+mu2=sapply(x.seq2,mu.link2)
+mu.mean2 <- apply( mu2 , 2 , mean )
+mu.HPDI2 <- apply( mu2 , 2 , HPDI , prob=0.95 )
+
+mu.link3=function(x){exp(IBM$mu.est + IBM$beta.est*1 + IBM$alpha.est* (90/(x^(IBM$dis.est))))/(1+exp(IBM$mu.est + IBM$beta.est*1 + IBM$alpha.est* (90/(x^(IBM$dis.est)))))}
+x.seq3=seq(0,25,by=0.1)
+mu3=sapply(x.seq3,mu.link3)
+mu.mean3 <- apply( mu3 , 2 , mean )
+mu.HPDI3 <- apply( mu3 , 2 , HPDI , prob=0.95 )
+
+plot(NA,bty="n",type="n",xlim=c(0,25), ylim=c(0,0.08),ylab="Recruitment", xlab="Distance from parent tree", cex.lab=1.5)
+legend("topright", legend=c( "Non-centered", "Centered", "Original study"),
+       col=c( "coral", "dodgerblue2","black"), lty=c(1,1,2),lwd=2, cex=1, text.font=4, box.lty=0)
+shade(mu.HPDI,x.seq,col=col.alpha("coral",.2))
+shade(mu.HPDI2,x.seq2,col=col.alpha("dodgerblue2",.3))
+shade(mu.HPDI3,x.seq3,col=col.alpha("black",.2))
+
+
+lines(x.seq,mu.mean,lwd=2,col="coral")
+lines(x.seq2,mu.mean2,lwd=2,col="dodgerblue2")
+lines(x.seq3,mu.mean3,lwd=2,lty=2,col="black")
+
+
+
+```
+<br>  _Figure 8: In this case, the centered parameterization provided less uncertain results closer to the ones obtained in the original paper. The curves represent the relationship between recruitment and distance from the parent trees with the estimates obtained parametrizing the model using the centered and non-centered parameterization, and the Bayesian model fit using JAGS [@plummer_jags_2003] from in the original study. _
+
+ <br>
+
+# 6. Final remarks
+ 
+Neighbor interactions are important for plant population and community dynamics. However, implementing neighbor models presents several challenges, including large pairwise matrices for neighbor interactions and correlations between estimated parameters. We explored Stan’s segment function and concluded that the segment function provides a way to efficiently handle sparse matrices while providing near-identical estimates to models with the pairwise matrix as input. Our recommendation is to use the segment function as a default  approach for handling sparse matrices that result from pairwise plant-plant interactions.
+<br>  
+We have also demonstrated how hierarchical terms, including random effects to account for plants co-located within the same plot, can be incorporated into neighbor interaction models in Stan. Fitting hierarchical models can be challenging due to correlations between latent variables and their variance. Our case study shows how two options for handling pathologies associated with the correlation between parameters, centered and non-centered parameterization, can be incorporated into neighbor interaction models. In our case, the non-centered parameterization performed worse than the centered parameterization. However, we expect that the non-centered parametrization will perform better for some model formulations [@betancourt_hamiltonian_2013]. Which parametrization should be used to fit the model is case-specific, and both parametrizations should be explored. In conclusion, our study demonstrates that Stan provides a robust Bayesian framework for modeling plant neighbor interactions, with the flexibility required to overcome inefficiencies associated with sparse matrices and incorporate hierarchical effects common in ecological data. 
+
+ <br>
+ 
+# 8. Acknowledgments
+Support for this case study was provided by the National Science Foundation under grant #1415297 in the SBE program. We thank Jonah Gabry for his helpful comments on this case study and the participants in the StanCon2020 for the engaging discussions about this case study.
+
+ <br>
+
+# 7. References
+
+
