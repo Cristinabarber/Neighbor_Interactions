@@ -25,7 +25,7 @@ always_allow_html: yes
  
 # 1. Introduction
 
-Interactions between neighboring plants impact how plants grow, survive, and reproduce. Although interactions occur at the scale of individual plants, the consequences of plant-plant interactions shape population and community structure across terrestrial ecosystems. Plants tend to do worse in single-species neighborhoods than in many-species neighborhoods [@sortibran_nurses_2014], an individual plant level dynamic that helps explain how plant biodiversity is maintained across ecosystems, from montane deserts [@adler_coexistence_2010] to tropical rainforests [@comita_asymmetric_2010]. Managing plant neighborhoods, from thinning dense stands of trees [@cescatti_silvicultural_1998;@lechuga_managing_2017] to planting species that will facilitate their neighbors [@gomez-aparicio_role_2009], is a cornerstone of forestry, restoration, and agriculture. The importance of plant-plant interactions across basic and applied ecology points to the need for analyses to quantify how neighborhoods impact plant demography. Such analyses must account for space, as plants interact more with closer neighbors than with neighbors further away (Fig.1).
+Interactions between neighboring plants impact how plants grow, survive, and reproduce. Although interactions occur at the scale of individual plants, the consequences of plant-plant interactions shape population and community structure across terrestrial ecosystems. Plants tend to do worse in single-species neighborhoods than in many-species neighborhoods [@sortibran_nurses_2014], a plant level dynamic that helps explain how plant biodiversity is maintained across ecosystems, from montane deserts [@adler_coexistence_2010] to tropical rainforests [@comita_asymmetric_2010]. Managing plant neighborhoods, from thinning dense stands of trees [@cescatti_silvicultural_1998;@lechuga_managing_2017] to planting species that will facilitate their neighbors [@gomez-aparicio_role_2009], is a cornerstone of forestry, restoration, and agriculture. The importance of plant-plant interactions across basic and applied ecology points to the need for analyses to quantify how neighborhoods impact plant demography. Such analyses must account for space, as plants interact more with closer neighbors than with neighbors further away (Fig.1).
 
 ![_Figure 1: Spatial structure of a plant neighborhood. The seedling in the center of the plot experiences a range of plant-plant interactions, depending on the neighbor's species identity,  plant size, and physical distance._](Neighbors_distances.png)
 
@@ -36,13 +36,13 @@ Interactions between neighboring plants impact how plants grow, survive, and rep
 <br>  
 
 **1. Develop models that account for non-linear relationships between interactions strength and pairwise distances between neighboring plants:**<br>  
-	 Explicitly estimating distance-decay parameters in neighborhood models enables greater flexibility and opportunities for novel inference. We use simulated data to demonstrate Stan’s ability to fit non-linear models for plant-plant interactions.
+	 Explicitly estimating distance-decay parameters in neighborhood models enables greater flexibility and opportunities for novel inference. We use simulated data to demonstrate Stan's ability to fit non-linear models for plant-plant interactions.
 
 <br>  
 	 
 **2. Efficient strategies for modeling pairwise interactions between many plants: **
 <br>  
-	Spatially-explicit models require accounting for pairwise interactions between neighbors, leading to large matrices. Every individual element added to a pairwise distance matrix increases matrix size following a series of square numbers. However, not all plants represented in the pairwise matrix interact, so this kind of data accumulates many zeroes, which creates a sparse matrix. We will demonstrate how to efficiently handle sparse matrices in plant neighborhood models, using Stan’s segment function to eliminate zero-valued elements from computation.
+	Spatially-explicit models require accounting for pairwise interactions between neighbors, leading to large matrices. Every individual element added to a pairwise distance matrix increases matrix size following a series of square numbers. However, not all plants represented in the pairwise matrix interact, so this kind of data accumulates many zeroes, which creates a sparse matrix. We will demonstrate how to efficiently handle sparse matrices in plant neighborhood models, using Stan's segment function to eliminate zero-valued elements from computation.
 
 <br>  
 
@@ -75,7 +75,7 @@ $$\begin{split} growth\sim normal(\mu,\sigma ^2)\\
 \ \mu_j = \alpha + \beta \textrm{s}_0 + a_3 \sum\limits_{j=1}^n \frac {\textrm{size}_{j}^{a_1}} {\textrm{distance}_{j}^2 a_2} \quad            Eq. 3 
 \end{split}$$
 
-Where $\alpha$  is the intercept, $\beta$ is the growth rate of plants depending on their initial size, $\mathit{\textrm{s}_0}$  is the initial size of the target plant, size, and distance are the matrix containing the size and distance of neighbors,  and $\mathit{a_1}$, $\mathit{a_2}$ and $\mathit{a_3}$ are parameters describing the relationship of growth with the neighbors's size and distance. 
+Where $\alpha$  is the intercept, $\beta$ is the growth rate of plants depending on their initial size, $\mathit{\textrm{s}_0}$  is the initial size of the target plant. Size, and distance are the matrices containing the size and distance of neighbors,  and $\mathit{a_1}$, $\mathit{a_2}$ and $\mathit{a_3}$ are parameters describing the relationship of growth with the neighbors's size and distance. 
 
 ## 3.1 Data simulation
  
@@ -100,7 +100,7 @@ plot(x,y,bty="n", cex=size_t0*.2, xlab="x", ylab="y", col=rgb(0,0,1,0.5),pch=20,
 ```
 <br>  _Figure 2: Map showing the simulated plant individuals and their initial size. The dots show where the plants are, and the size of the dot is proportional to the initial size of the plant._
 <br>  
-Our generative model  assumes that plant-plant interactions beyond a neighbor effect radius of 10 m are zero. We then simulated the effect of neighbors as a function of neighbor size (bigger neighbors have larger effects) and distance (closer neighbors have larger effects) using the following equation:  `growth=alpha+size_t0*beta+ a3*rowSums(exp(a1*log(sizemat4)-(distmat4^2*a2)))`. We assumed growth was normally distributed, with a mean equal to the linear combination of an intercept (representing baseline growth), a size-dependent term, and the neighborhood effect term (Eq. 3).
+Our generative model assumes that plant-plant interactions beyond a neighbor effect radius of 10 m are zero. We then simulate the effect of neighbors as a function of neighbor size (bigger neighbors have larger effects) and distance (closer neighbors have larger effects) using the following equation:  `growth=alpha+size_t0*beta+ a3*rowSums(exp(a1*log(sizemat4)-(distmat4^2*a2)))`. We assume growth is normally distributed, with a mean equal to the linear combination of an intercept (representing baseline growth), a size-dependent term, and the neighborhood effect term (Eq. 3).
 ```{r}
 #Here, the parameters are set to produce a biologically reasonable outcome:
 alpha=0.8 # Intercept.
@@ -124,7 +124,7 @@ When we set the neighbor effect radius, we create a considerable amount of zero-
 ![_Figure 3: Segment function requires the creation of a vector with no zeroes, an index of the non- zero values on each matrix row and an index of the position in the vector of the first values of the matrix rows. This diagram explains the composition of the non-zero values vector and the two vector index needed to use the segment function._](Segment_Fig2.jpg)
 
 
-<br>We compared Stan models fit with the segment function to the same models fit using the full matrix. To evaluate how choosing a neighborhood effect radius could introduce bias in parameter estimation, we compared the fit of six different models with neighbor effect radii of 5m, 10m, 15m, 20m. We note that the “true” effect radius, which is known in this case because the data were simulated, is 10 m. With real data, the decision of this radius should be based on biological knowledge, for example, the distance that roots extend from the base of a plant [@zaiats_intraspecific_2020] or by testing at which neighbor effect radius the model has the best fit [@pacala_neighborhood_1985;@pacala_neighborhood_1987]. For each neighbor effect radius, we set the effect of distant neighbors beyond the radius to zero.
+<br>We compare Stan models fit with the segment function to the same models fit using the full matrix. To evaluate how choosing a neighborhood effect radius could introduce bias in parameter estimation, we compare the fit of six different models with neighbor effect radii of 5m, 10m, 15m, 20m. We note that the "true" effect radius, which is known in this case because the data were simulated, is 10 m. With real data, the decision of this radius should be based on biological knowledge, for example, the distance that roots extend from the base of a plant [@zaiats_intraspecific_2020] or by testing at which neighbor effect radius the model has the best fit [@pacala_neighborhood_1985;@pacala_neighborhood_1987]. For each neighbor effect radius, we set the effect of distant neighbors beyond the radius to zero.
   
 ```{r}
 distmat=ifelse(distmat>10,0,distmat) #here, the cut-off is at 10m radius. 
@@ -228,8 +228,8 @@ data{
   vector [N] size_t0;           // size of focal plants
   vector [N] growth;            // growth of focal plants, response
   int n_nb[N];
-  vector [obs] size_observations;        // leng vector of neighbor sizes
-  vector [obs] dist_observations;        // long vector of pairwise distances
+  vector [obs] size_vector;        // leng vector of neighbor sizes
+  vector [obs] dist_vector;        // long vector of pairwise distances
   int pos[N];
 }
 transformed data{
@@ -261,12 +261,12 @@ model{
 ```
   
 ## 3.3 Output
-We ran the code using the pairwise matrix and the segment function for the six neighbor effect radii and compared model fitting efficiency between them. We estimated the model fitting efficiency by dividing the elapsed time by the effective sample size (ESS) of 1000 iterations. Lower values represent more efficient sampling:
+We ran the code using the pairwise matrix and the segment function for the six neighbor effect radii and compared model fitting efficiency between them. We estimate the model fitting efficiency by dividing the elapsed time by the effective sample size (ESS) of 1000 iterations. Lower values represent more efficient sampling:
 
 ```{r eval = F, include=T}
 sum(get_elapsed_time(model)[,"sample"])/sum(summary(model)$summary[,'n_eff'] * 1000)
 ```
-The results show that the segment function was more efficient than the pairwise matrix for almost all neighbor effect radii. However, for the generative radius at 10m, both strategies were equally efficient. Using the segment function to fit neighbor interaction models is advantageous because the greater efficiency from the segment function compared with the matrix under different radii allows a faster exploration of models parametrized with different radii (Fig. 4). 
+The results show that the segment function is more efficient than the pairwise matrix for almost all neighbor effect radii. However, for the generative radius at 10m, both strategies are equally efficient. Using the segment function to fit neighbor interaction models is advantageous because the greater efficiency from the segment function compared with the matrix under different radii allows a faster exploration of models parametrized with different radii (Fig. 4). 
 ```{r echo=FALSE, message=FALSE}
 load("simMatrix1.Rdata")
 load("simMatrix2.Rdata")
@@ -307,9 +307,9 @@ legend(3, 12, legend=c("Matrix", "Segment function"),
 ```
 
 
-<br>  _Figure 4: Segment function is more efficient than the matrix approach for all neighbor effects, except 10 m. We note that 10 m was the “true” neighbor effect radius used to simulate data. The blue dashed line shows the change in efficiency using the matrix under different neighbor effect radii. The green line shows the change in efficiency using segment function under different neighbor effect radii. Smaller values of Time/ESS represent inreased efficiency and higher values represent decreased efficiency._ 
+<br>  _Figure 4: Segment function is more efficient than the matrix approach for all neighbor effects, except 10 m. We note that 10 m was the "true" neighbor effect radius used to simulate data. The blue dashed line shows the change in efficiency using the matrix under different neighbor effect radii. The green line shows the change in efficiency using segment function under different neighbor effect radii. Smaller values of Time/ESS represent inreased efficiency and higher values represent decreased efficiency._ 
 <br>  
-We can also check whether estimated parameter intervals capture the true values as the true values for parameters are known in this simulated example. Our results highlight the importance of choosing a neighbor effect radius to obtain accurate estimates that describes the plant-plant interactions (Fig. 5). The matrix and the segment function could recover the true parameters with a neighbor effect radius of 10 m. For the segment method, similar efficiency and parameter recovery was achieved with a neighbor effect radius of 15 m. Models fitted with other neighbor effect radii did not converge and were not able to recover the true parameters for both the matrix and the segment function. These results agree with @canham_analysis_2006. They determined that a slightly bigger radius than the mean radius can provide estimates with negligible biases. In comparison, a radius smaller than the mean radius provided more significant biases because it missed contributing individuals. Altogether, we would recommend erring on the side of overestimating the neighbor radius effect rather than having a too-small radius. Given this recommendation, we also suggest using the segment function as it is more efficient than the matrix for all radii tested (Fig.4). 
+We can also check whether estimated parameter intervals capture the "true" values because the parameters values are known in this simulated example. Our results highlight the importance of choosing a neighbor effect radius to obtain accurate estimates that describes the plant-plant interactions (Fig. 5). The matrix and the segment function could recover the true parameters with a neighbor effect radius of 10 m. For the segment method, similar efficiency and parameter recovery was achieved with a neighbor effect radius of 15 m. Models fitted with other neighbor effect radii did not converge and were not able to recover the true parameters for both the matrix and the segment function. These results agree with @canham_analysis_2006. They determined that a slightly bigger radius than the mean radius can provide estimates with negligible biases. In comparison, a radius smaller than the mean radius provided more significant biases because it missed contributing individuals. Altogether, we would recommend erring on the side of overestimating the neighbor radius effect rather than having a too-small radius. Given this recommendation, we also suggest using the segment function as it is more efficient than the matrix for all radii tested (Fig.4). 
 
 ```{r echo=FALSE, message=FALSE, warning = FALSE}
 multiplot <- function(x) { 
@@ -323,7 +323,7 @@ multiplot(list(simMatrix4,simSeg4,simMatrix3,simSeg3,simMatrix2,simSeg2,simMatri
 ```
 <br>  _Figure 5: The neighbor effect radius selection is essential to obtain unbiased estimates. The bias is similar for all the parameters and neighbors effect radii, so in this graph, we just show one of the parameters. The chosen parameter estimates are for a2, which estimates the rate of decrease of the effect of neighbors on growth with distance. The green shapes are the segment function  parameters estimates. The blue shapes are the matrix parameter estimates. Each of the shapes corresponds to a different neighbor effect radius. The red line is the true parameter used in the simulation. 90% Credibility intervals (CI) showed in the figure. Note the CI for the 10, and 15 m radii are not visible._ 
 <br>  
-Lastly, we checked common diagnostic metrics to evaluate convergence at the generative radius of 10 m. There are no divergent transitions, and the ESS, and  _$\hat{R}$_ values do not reveal any sampling problems.
+Lastly, we check common diagnostic metrics to evaluate convergence at the generative radius of 10 m. There are no divergent transitions, and the ESS, and  _$\hat{R}$_ values do not reveal any sampling problems.
 
 <br>  
 ```{r echo=FALSE}
@@ -347,7 +347,7 @@ $$\begin{split} recruitment \sim negative \, binomial(\mu,\phi)\\
 \end{split}$$
 
 
-The response variable in this example is recruitment, the number of seedlings within the monitored plots. Because our response variable is count data, we used the negative binomial distribution, parameterized in terms of a mean (_$\mu$_) and an overdispersion parameter(_$\phi$_). _a_ is the intercept, _b_ is the parameter describing the relationship between recruitment and the hyperbolic effect of distance, _c_ is the rate of decay of the effect of distance on recruitment, and CP is the number of suitable recruitment sites (counts of host trees) in the 30 x 30 m plots. 
+The response variable in this example is recruitment, the number of seedlings within the monitored plots. Because our response variable is count data, we use the negative binomial distribution, parameterized in terms of a mean (_$\mu$_) and an overdispersion parameter(_$\phi$_). _a_ is the intercept, _b_ is the parameter describing the relationship between recruitment and the hyperbolic effect of distance, _c_ is the rate of decay of the effect of distance on recruitment, and CP is the number of suitable recruitment sites (counts of host trees) in the 30 x 30 m plots. 
 <br>  
 The data on adult tree abundance are organized in a distance pairwise matrix with the number of rows equal to the total number of sites and the number of columns equal to the maximum number of adult trees observed at a site. Then the distance pairwise matrix is filled with the distances between seedling plots and parent trees. Once the matrix is filled, the distances beyond the neighbor effect radius are transformed to zero.
 <br>  
@@ -360,7 +360,7 @@ dis[1:8,1:8]
 
 ## 4.2 Stan Code
 
-We used a very weakly informed prior `normal(0,100)` in `a` , `b` and `j` and an `exponential(0.5)` distribution for `phy` to prevent the model from exploring negative values for the shape parameters of the negative binomial. The original study did not include a log-link, but it exponenciated `a` , `b` and `j` to keep the parameters positive. To replicate the previous results, we ensured non-negative values for the mean of the negative binomial distribution by constraining parameters `a` , `b` and `j` to positive values using `real<lower=0>`, however we note that the log-link is the canonical link-function for the negative binomial distribution and probably a better way to ensure positive values for future studies. The Stan code for a model using the pairwise matrix is the following: 
+We use a very weakly informed prior `normal(0,100)` in `a` , `b` and `j` and an `exponential(0.5)` distribution for `phy` to prevent the model from exploring negative values for the shape parameters of the negative binomial. The original study did not include a log-link and exponenciated `a` , `b` and `j` to keep the parameters positive. To replicate the previous results, we ensure non-negative values for the mean of the negative binomial distribution by constraining parameters `a` , `b` and `j` to positive values using `real<lower=0>`, however we note that the log-link is the canonical link-function for the negative binomial distribution and probably a better way to ensure positive values for future studies. The Stan code for a model using the pairwise matrix is the following: 
 
 ```{r eval=F, include=T}
 data {
@@ -402,7 +402,7 @@ model{
   }
 ```
 
-To use the segment function in this example, we consider that there are seedling plots that do not have any adult strangler fig trees nearby, indicating an empty neighborhood. An empty neighborhood will result in a zero in the `n_nb` vector, as in the second row of the predictor matrix in Figure 3. To account for these zeroes, include an ifelse statement that prevents zero-valued elements of n_nb in the plant interactions kernel in the `transformed parameters` block:
+To use the segment function in this example, we consider that there are seedling plots that do not have any adult strangler fig trees nearby, indicating an empty neighborhood. An empty neighborhood will result in a zero in the `n_nb` vector, as in the second row of the predictor matrix in Figure 3. To account for these zeroes, we include an ifelse statement that prevents zero-valued elements of n_nb in the plant interactions kernel in the `transformed parameters` block:
 
 ```{r eval=F, include=T}
 data {
@@ -442,7 +442,7 @@ model{
 
 ## 4.3 Output
 
-The results of the model using matrix and segment strategies lead to similar parameters estimates (Fig. 6) and produce parameter estimates comparable to the frequentist approach used in the published paper (Fig. 7). 
+The results of the model using matrix and segment strategies lead to similar parameter estimates (Fig. 6) and produce parameter estimates comparable to the frequentist approach used in the published paper (Fig. 7). 
 <br>  
 
 ```{r echo=F}
@@ -510,7 +510,7 @@ curve(exp(-3.97694)+exp(2.245328)*(1/(exp(3.95)+x)),lwd=2,lty=3,col="black",add 
   
 _Figure 7: Matrix and segment obtained similar estimates of the relationship between recruitment and the distance from parent tree. Curves show the relationship between recruitment and distance from parent tree parametrized using the sparse matrix, the segment function, and the frequentist maximum likelihood model fit using the mle4 package [@bates_fitting_2015] from in the original study_
 
-While both the full matrix and the segment models showed evidence of convergence, model efficiency was greater for the model fit with the segment function. Again, we estimated the model fitting efficiency by dividing the elapsed time by the effective sample size (ESS) of 1000 iterations. `Fig_distmodelmatrix` is the model fitted using the matrix, and `Fig_distmodel` is the model fitted using the segment function.
+While both the full matrix and the segment models show evidence of convergence, model efficiency is greater for the model fit with the segment function. Again, we estimate the model fitting efficiency by dividing the elapsed time by the effective sample size (ESS) of 1000 iterations. `Fig_distmodelmatrix` is the model fitted using the matrix, and `Fig_distmodel` is the model fitted using the segment function.
 
 ```{r include=T}
 #Efficiency of the model fitted using the matrix:
@@ -530,7 +530,7 @@ sum(get_elapsed_time(Fig_distmodel)[,"sample"])/
  
 ## 5.1 Overview of the model
  
-Our second data example uses a Bayesian hierarchical framework to estimate how conspecific trees affect the seed to seedling transition in a tropical tree species from central Thailand. Plant neighborhoods considered in this model include seedling and adult tree neighbors, all of the same species as marked seeds placed on the forest floor in 1 $m^2$ plots. The marked seeds comprised a seed addition experiment spanning a 5 km gradient of tree abundance. In this study, the neighbor effect radius was set at 10 m. The primary objective of the study was to quantify how the density of neighbors impacted the probability of seed germination. More information on the study can be found in Caughlin et al.[-@caughlin_loss_2015]. We modeled the germination probability of seeds as proportional data using the binomial distribution (Eq. 6). 
+Our second data example uses a Bayesian hierarchical framework to estimate how conspecific trees affect the seed to seedling transition in a tropical tree species from central Thailand. Plant neighborhoods considered in this model include seedling and adult tree neighbors, all of the same species as marked seeds placed on the forest floor in 1 $m^2$ plots. The marked seeds comprised a seed addition experiment spanning a 5 km gradient of tree abundance. In this study, the neighbor effect radius was set at 10 m. The primary objective of the study was to quantify how the density of neighbors impacted the probability of seed germination. More information on the study can be found in Caughlin et al.[-@caughlin_loss_2015]. We model the germination probability of seeds as proportional data using the binomial distribution (Eq. 6). 
 
 $$\begin{split}
 germination \sim binomial(\textrm{S,N}) \\
@@ -542,12 +542,12 @@ e_j \sim normal(0, \sigma) \\
 
 The response variable in this example is the proportion of total added seeds within monitored plots. Input to the binomial distribution includes the total number of seeds added to each plot (N) and the number of successful germination events (S). Size and distance are the matrices containing the size and distance of neighbors. $\mu$ is the baseline germination, _b_ is the decrease in seed survival as a function of neighbor density, Con. Seedlings are the amount of conspecific seedling to represent the crowding effect, _a_ is the parameter that represents the effect of neighbor size and distance on recruitment, _ger_ is the distance decay of the effect of neighbor size and distance, and _e_ is a random plot effect, to account for non-independence between seeds in the same plot.
 <br>  
-The hierarchical structure of random effects, including the random plot effect in the seed germination model, can lead to model-fitting challenges. One common challenge in fitting these models is the high correlation between random effect parameters (“Neil’s funnel effect”), which causes the sampler to become "stuck" in the highly correlated area. When this happens, a non- centered parametrization can solve the pathology. However, if the non-centered parameterization is used, but Neil’s funnel does not occur, the non-centered parameterization can lead to an inefficient exploration of the probability surface. The relative performance of the centered vs. non-centered parameterizations depends on variance in the data as well as the sample size  [@betancourt_hamiltonian_2013]. In this case study, we compare a centered and a non-centered parameterization for the germination data, using a neighborhood model fit with the segment function in Stan. 
+The hierarchical structure of random effects, including the random plot effect in the seed germination model, can lead to model-fitting challenges. One common challenge in fitting these models is the high correlation between random effect parameters ("Neil's funnel effect"), which causes the sampler to become "stuck" in the highly correlated area. When this happens, a non- centered parametrization can solve the pathology. However, if the non-centered parameterization is used, but Neil's funnel does not occur, the non-centered parameterization can lead to an inefficient exploration of the probability surface. The relative performance of the centered vs. non-centered parameterizations depends on variance in the data as well as the sample size  [@betancourt_hamiltonian_2013]. In this case study, we compare a centered and a non-centered parameterization for the germination data, using a neighborhood model fit with the segment function in Stan. 
 <br> 
 
 ## 5.2 Stan Code
 
-For a centered parameterization using the segment function, we would add the random effect directly into the model `g[n] =  (..) + e[plots[n]]`. We used a weakly informed prior `normal(0,1)` in `a` , `b`, `mu` and `ger`, for `e` we used a `normal(0, sigma_plot)` to center the random effects mean around zero. 
+For a centered parameterization using the segment function, we would add the random effect directly into the model `g[n] =  (..) + e[plots[n]]`. We use a weakly informed prior `normal(0,1)` in `a` , `b`, `mu` and `ger`, for `e` we used a `normal(0, sigma_plot)` to center the random effects mean around zero. 
 
   
 ```{r eval=F, include=T}
@@ -649,7 +649,7 @@ model{
 }
 ```
 ## 5.3 Output
-The results show that when using a centered parameterization, we obtain similar comparable parameter estimates to the study. Non-centered parameterization resulted in estimates further from the ones obtained in the study and with wider confidence intervals. This example illustrates how a non-centered parameterization can sometimes result in higher uncertainty than the centered parameterization. 
+The results show that when using a centered parameterization, we obtain similar comparable parameter estimates to the study. Non-centered parameterization results in estimates further from the ones obtained in the study and with wider confidence intervals. This example illustrates how a non-centered parameterization can sometimes result in higher uncertainty than the centered parameterization. 
 ```{r echo=F}
 IBM<-read.csv("IBMpars12.16.csv")
 load("Thai_segmodelcV.rds")
@@ -707,17 +707,17 @@ lines(x.seq3,mu.mean3,lwd=2,lty=2,col="black")
 
 # 6. Final remarks
  
-Neighbor interactions are important for plant population and community dynamics. However, implementing neighbor models presents several challenges, including large pairwise matrices for neighbor interactions and correlations between estimated parameters. We explored Stan’s segment function and concluded that the segment function provides a way to efficiently handle sparse matrices while providing near-identical estimates to models with the pairwise matrix as input. Our recommendation is to use the segment function as a default  approach for handling sparse matrices that result from pairwise plant-plant interactions.
+Neighbor interactions are important for plant population and community dynamics. However, implementing neighbor models presents several challenges, including large pairwise matrices for neighbor interactions and correlations between estimated parameters. We explored Stan's segment function and concluded that the segment function provides a way to efficiently handle sparse matrices while providing near-identical estimates to models with the pairwise matrix as input. Our recommendation is to use the segment function as a default  approach for handling sparse matrices that result from pairwise plant-plant interactions.
 <br>  
 We have also demonstrated how hierarchical terms, including random effects to account for plants co-located within the same plot, can be incorporated into neighbor interaction models in Stan. Fitting hierarchical models can be challenging due to correlations between latent variables and their variance. Our case study shows how two options for handling pathologies associated with the correlation between parameters, centered and non-centered parameterization, can be incorporated into neighbor interaction models. In our case, the non-centered parameterization performed worse than the centered parameterization. However, we expect that the non-centered parametrization will perform better for some model formulations [@betancourt_hamiltonian_2013]. Which parametrization should be used to fit the model is case-specific, and both parametrizations should be explored. In conclusion, our study demonstrates that Stan provides a robust Bayesian framework for modeling plant neighbor interactions, with the flexibility required to overcome inefficiencies associated with sparse matrices and incorporate hierarchical effects common in ecological data. 
 
  <br>
  
-# 8. Acknowledgments
+# 7. Acknowledgments
 Support for this case study was provided by the National Science Foundation under grant #1415297 in the SBE program. We thank Jonah Gabry for his helpful comments on this case study and the participants in the StanCon2020 for the engaging discussions about this case study.
 
  <br>
 
-# 7. References
+# 8. References
 
 
